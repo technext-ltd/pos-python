@@ -1,0 +1,169 @@
+name: Build POS System APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  release:
+    types: [ published ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          git \
+          openjdk-17-jdk \
+          zip \
+          unzip \
+          autoconf \
+          automake \
+          libtool \
+          pkg-config \
+          zlib1g-dev \
+          libncurses5-dev \
+          libtinfo5 \
+          libgmp-dev \
+          liblzma-dev \
+          libssl-dev \
+          python3-dev \
+          libffi-dev \
+          cmake \
+          ninja-build \
+          ccache
+        
+    - name: Install Python build dependencies
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        pip install Cython==0.29.33
+        pip install buildozer
+        pip install virtualenv
+        
+    - name: Set up Android SDK
+      run: |
+        mkdir -p ~/.android
+        touch ~/.android/repositories.cfg
+        
+        # Download and install Android Command Line Tools
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-8512546_latest.zip
+        unzip -q commandlinetools-linux-8512546_latest.zip -d ~/.android/
+        mv ~/.android/cmdline-tools ~/.android/cmdline-tools-temp
+        mkdir -p ~/.android/cmdline-tools/latest
+        mv ~/.android/cmdline-tools-temp/* ~/.android/cmdline-tools/latest/
+        rm -rf ~/.android/cmdline-tools-temp
+        
+        # Set environment variables
+        echo "ANDROID_SDK_ROOT=$HOME/.android" >> $GITHUB_ENV
+        echo "ANDROID_HOME=$HOME/.android" >> $GITHUB_ENV
+        echo "PATH=$HOME/.android/cmdline-tools/latest/bin:$PATH" >> $GITHUB_ENV
+        
+    - name: Accept Android licenses
+      run: |
+        yes | ~/.android/cmdline-tools/latest/bin/sdkmanager --licenses || true
+        ~/.android/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0"
+        
+    - name: Set up Android NDK
+      run: |
+        wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
+        unzip -q android-ndk-r25b-linux.zip -d ~/.android/
+        mv ~/.android/android-ndk-r25b ~/.android/ndk-bundle
+        echo "ANDROID_NDK_HOME=$HOME/.android/ndk-bundle" >> $GITHUB_ENV
+        echo "PATH=$HOME/.android/ndk-bundle:$PATH" >> $GITHUB_ENV
+        
+    - name: Create buildozer.spec if not exists
+      run: |
+        if [ ! -f "buildozer.spec" ]; then
+          buildozer init
+          echo "Created default buildozer.spec"
+        fi
+        
+    - name: Rename main file for Buildozer
+      run: |
+        if [ -f "pos2.py" ] && [ ! -f "main.py" ]; then
+          cp pos2.py main.py
+          echo "Copied pos2.py to main.py"
+        fi
+        
+    - name: Modify buildozer.spec for our app
+      run: |
+        # Create a custom buildozer.spec with our requirements
+        cat > buildozer.spec << 'EOL'
+[app]
+title = POS System
+package.name = possystem
+package.domain = org.kivy
+
+source.dir = .
+source.include_exts = py,png,jpg,kv,atlas,json,txt,ttf
+
+version = 1.0.0
+requirements = python3,kivy==2.3.0,openssl,requests,pyopenssl,certifi,chardet,idna,urllib3
+
+android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
+
+android.api = 33
+android.minapi = 21
+android.ndk = 25b
+
+orientation = portrait
+fullscreen = 0
+
+[buildozer]
+log_level = 2
+warn_on_root = 1
+EOL
+        
+    - name: Create requirements.txt for additional dependencies
+      run: |
+        cat > requirements.txt << 'EOL'
+kivy==2.3.0
+requests==2.31.0
+pyopenssl==23.2.0
+certifi==2023.11.17
+chardet==5.2.0
+idna==3.4
+urllib3==2.1.0
+EOL
+        
+    - name: Build APK with Buildozer
+      run: |
+        export PATH=$HOME/.local/bin:$PATH
+        buildozer -v android clean
+        buildozer -v android debug
+        
+    - name: List build artifacts
+      run: |
+        ls -la bin/
+        file bin/*.apk || true
+        
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: pos-system-apk
+        path: bin/*.apk
+        retention-days: 30
+        
+    - name: Upload to GitHub Release
+      if: github.event_name == 'release'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: bin/*.apk
+        asset_name: POS-System-${{ github.event.release.tag_name }}.apk
+        asset_content_type: application/vnd.android.package-archive
