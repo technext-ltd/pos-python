@@ -12,9 +12,23 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.clock import Clock
 import json
-import os
 from datetime import datetime
+import os
+from kivy.app import App
 
+# Get Android-safe data directory
+def get_data_dir():
+    if hasattr(os, 'getenv') and os.getenv('ANDROID_ARGUMENT'):
+        # On Android, use app-specific storage
+        from android.storage import app_storage_path
+        return app_storage_path()
+    else:
+        # On PC, use current directory
+        return os.path.dirname(os.path.abspath(__file__))
+
+DATA_DIR = get_data_dir()
+PRODUCTS_FILE = os.path.join(DATA_DIR, 'products.json')
+CUSTOMERS_FILE = os.path.join(DATA_DIR, 'customers.json')
 Builder.load_string('''
 <MainScreen>:
     BoxLayout:
