@@ -1,0 +1,49 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y git openjdk-17-jdk zip unzip
+        pip install buildozer
+        
+    - name: Create buildozer.spec
+      run: |
+        buildozer init
+        # Use sed to modify the spec file
+        sed -i 's/^requirements = .*/requirements = python3,kivy/' buildozer.spec
+        sed -i 's/^title = .*/title = POS System/' buildozer.spec
+        sed -i 's/^package.name = .*/package.name = possystem/' buildozer.spec
+        sed -i 's/^android.permissions = .*/android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE/' buildozer.spec
+        
+    - name: Rename main file
+      run: |
+        if [ -f "pos2.py" ]; then
+          cp pos2.py main.py
+        fi
+        
+    - name: Build APK
+      run: |
+        buildozer -v android debug
+        
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-apk
+        path: bin/*.apk
