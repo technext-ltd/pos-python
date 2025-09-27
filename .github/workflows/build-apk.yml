@@ -98,9 +98,8 @@ jobs:
           echo "Copied pos2.py to main.py"
         fi
         
-    - name: Modify buildozer.spec for our app
+    - name: Create proper buildozer.spec
       run: |
-        # Create a custom buildozer.spec with our requirements
         cat > buildozer.spec << 'EOL'
 [app]
 title = POS System
